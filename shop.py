@@ -45,6 +45,7 @@ class FontCompat:
         return surface
 
 PURCHASES_FILE = "purchases.json"
+MAX_DIFFICULTY_FILE = "max_difficulty.txt"
 
 def _load_purchases():
     try:
@@ -59,6 +60,13 @@ def _save_purchases(data):
             json.dump(data, f)
     except Exception:
         pass
+
+def _load_max_difficulty():
+    try:
+        with open(MAX_DIFFICULTY_FILE, "r", encoding="utf-8") as f:
+            return int(f.read().strip() or 1)
+    except Exception:
+        return 1
 
 def _wrap_text(text, font_obj, max_width):
     """
@@ -102,14 +110,7 @@ def show_shop(fullscreen=False):
     small = FontCompat(22)
     clock = pygame.time.Clock()
 
-    # Read coins if present (optional), else 0
-    coins = 0
-    if os.path.exists("coins.txt"):
-        try:
-            with open("coins.txt", "r", encoding="utf-8") as f:
-                coins = int(f.read().strip() or 0)
-        except Exception:
-            coins = 0
+    max_difficulty = _load_max_difficulty()
 
     # Load icons from assets/shop_icons
     icons = []
@@ -155,31 +156,31 @@ def show_shop(fullscreen=False):
         "quantum_capacitor.png": {
             "id": "quantum_capacitor",
             "name": "Quantum Capacitor",
-            "price": 0,
+            "required_level": 10,
             "desc": "Стоя 5 сек — заряжается быстрый луч. Все выстрелы станут лучами до начала движения."
         },
         "singularity_surge.png": {
             "id": "singularity_surge",
             "name": "Singularity Surge",
-            "price": 0,
+            "required_level": 20,
             "desc": "Активная способность (Q): ставит гравитационный якорь, который тянет врагов, замедляет их и наносит урон по площади 6 секунд. Кулдаун 12 секунд."
         },
         "shield_matrix.png": {
             "id": "shield_matrix",
             "name": "Shield Matrix",
-            "price": 0,
+            "required_level": 30,
             "desc": "Пассивный щит: каждые 5 секунд автоматически блокирует одну атаку врага."
         },
         "explosive_blast.png": {
             "id": "explosive_blast",
             "name": "Explosive Blast",
-            "price": 0,
+            "required_level": 40,
             "desc": "Активная способность (E): создаёт мощный взрыв вокруг корабля, уничтожая всех врагов в радиусе. Кулдаун 8 секунд."
         },
         "repair_kit.png": {
             "id": "repair_kit",
             "name": "Repair Kit",
-            "price": 0,
+            "required_level": 50,
             "desc": "Активная способность (R): восстанавливает 50 HP. Кулдаун 30 секунд."
         }
     }
@@ -205,8 +206,8 @@ def show_shop(fullscreen=False):
         title = title_font.render("SHOP", True, GOLD)
         win.blit(title, title.get_rect(center=(WIDTH // 2, 80)))
 
-        coins_text = font.render(f"Coins: {coins}", True, WHITE)
-        win.blit(coins_text, (20, 20))
+        progress_text = font.render(f"Макс. сложность: {max_difficulty}", True, WHITE)
+        win.blit(progress_text, (20, 20))
 
         # Draw icon grid for current page
         if not icons:
@@ -231,8 +232,13 @@ def show_shop(fullscreen=False):
                 if fname in ABILITIES:
                     meta = ABILITIES[fname]
                     is_owned = purchases.get(meta["id"], False)
-                    label = "OWNED" if is_owned else f"{meta['price']} COINS"
-                    color = GREEN if is_owned else WHITE
+                    unlockable = max_difficulty >= meta.get("required_level", 0)
+                    if is_owned:
+                        label = "OWNED"
+                        color = GREEN
+                    else:
+                        label = f"Требует ур. {meta.get('required_level', 0)}"
+                        color = GREEN if unlockable else WHITE
                     lbl = small.render(label, True, color)
                     win.blit(lbl, lbl.get_rect(center=(rect.centerx, rect.bottom + 18)))
                     # owned highlight
@@ -290,9 +296,18 @@ def show_shop(fullscreen=False):
                 text_y += txt.get_height() + 4
             # price / owned
             is_owned = purchases.get(selected["id"], False)
-            price_text = "OWNED" if is_owned else f"Price: {selected['price']} COINS"
-            price_color = GREEN if is_owned else WHITE
-            win.blit(small.render(price_text, True, price_color), (panel.left + 140, panel.top + 60))
+            required_level = selected.get("required_level", 0)
+            unlockable = max_difficulty >= required_level
+            if is_owned:
+                status_text = "OWNED"
+                status_color = GREEN
+            elif unlockable:
+                status_text = f"Доступно: ур. >= {required_level}"
+                status_color = GREEN
+            else:
+                status_text = f"Требуется сложность {required_level} (у вас {max_difficulty})"
+                status_color = WHITE
+            win.blit(small.render(status_text, True, status_color), (panel.left + 140, panel.top + 60))
             # buy button
             buy_rect = pygame.Rect(0, 0, 160, 44)
             buy_rect.midbottom = (panel.centerx, panel.bottom - 24)
@@ -300,7 +315,12 @@ def show_shop(fullscreen=False):
             buy_color = (0, 180, 0) if buy_hover else (0, 140, 0)
             pygame.draw.rect(win, buy_color, buy_rect, border_radius=8)
             pygame.draw.rect(win, (220, 220, 220), buy_rect, 2, border_radius=8)
-            btn_label = "Close" if is_owned else "Buy"
+            if is_owned:
+                btn_label = "Close"
+            elif unlockable:
+                btn_label = "Unlock"
+            else:
+                btn_label = "Locked"
             lbl = font.render(btn_label, True, WHITE)
             win.blit(lbl, lbl.get_rect(center=buy_rect.center))
 
@@ -330,15 +350,8 @@ def show_shop(fullscreen=False):
                         if purchases.get(selected["id"], False):
                             selected = None
                         else:
-                            # price check (currently 0)
-                            price = selected.get("price", 0)
-                            if coins >= price:
-                                coins -= price
-                                try:
-                                    with open("coins.txt", "w", encoding="utf-8") as f:
-                                        f.write(str(coins))
-                                except Exception:
-                                    pass
+                            required_level = selected.get("required_level", 0)
+                            if max_difficulty >= required_level:
                                 purchases[selected["id"]] = True
                                 _save_purchases(purchases)
                             selected = None
