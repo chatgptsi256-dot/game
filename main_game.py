@@ -666,6 +666,7 @@ def main(fullscreen=False, purchases=None):
     powerup_end_time = 0
     autofire = False
     enemy_level = 1
+    max_enemy_level = enemy_level
 
     # Ability flags
     purchases = purchases or {}
@@ -733,6 +734,7 @@ def main(fullscreen=False, purchases=None):
         # рост сложности
         if now - last_difficulty_increase > DIFFICULTY_INTERVAL and enemy_level < MAX_ENEMY_LEVEL:
             enemy_level += 1
+            max_enemy_level = max(max_enemy_level, enemy_level)
             last_difficulty_increase = now
 
         # спавн бонусов
@@ -849,5 +851,18 @@ def main(fullscreen=False, purchases=None):
     if score > best:
         with open("top_score.txt", "w") as f:
             f.write(str(score))
+
+    # сохраняем достигнутый максимум сложности для магазина
+    try:
+        with open("max_difficulty.txt", "r") as f:
+            best_difficulty = int(f.read().strip() or 1)
+    except Exception:
+        best_difficulty = 1
+    if max_enemy_level > best_difficulty:
+        try:
+            with open("max_difficulty.txt", "w") as f:
+                f.write(str(max_enemy_level))
+        except Exception:
+            pass
 
     return "game_over"
